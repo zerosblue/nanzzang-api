@@ -3,7 +3,7 @@ spring:
     name: nanzzang-api
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/nanzzang_db}
+    url: ${DB_URL:jdbc:postgresql://aws-0-ap-southeast-1.pooler.supabase.com:5432/nanzzang_db?sslmode=require}
     username: ${DB_USERNAME:nanzzang}
     password: ${DB_PASSWORD:nanzzang_password}
     driver-class-name: org.postgresql.Driver
@@ -21,6 +21,8 @@ spring:
         format_sql: false
         default_batch_fetch_size: 100
         dialect: org.hibernate.dialect.PostgreSQLDialect
+        temp:
+          use_jdbc_metadata_defaults: false
 
   data:
     redis:
