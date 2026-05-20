@@ -10,8 +10,10 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import lombok.extern.slf4j.Slf4j;
 import java.time.LocalDateTime;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
@@ -21,7 +23,8 @@ public class DataInitializer implements CommandLineRunner {
 
     @Override
     @Transactional
-    public void run(String... args) throws Exception {
+    public void run(String... args) {
+        try {
         // 이미 데이터가 있다면 기존 유저 중 test1을 관리자로 승격하고 종료
         if (userRepository.count() > 0) {
             userRepository.findByEmail("test1@nanzzang.com")
@@ -110,5 +113,8 @@ public class DataInitializer implements CommandLineRunner {
         topicRepository.save(topic2);
         topicRepository.save(topic3);
         topicRepository.save(topic4);
+        } catch (Exception e) {
+            log.warn("DataInitializer skipped: {}", e.getMessage());
+        }
     }
 }
