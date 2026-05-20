@@ -15,5 +15,6 @@ RUN mkdir -p uploads
 EXPOSE 8080
 ENTRYPOINT ["java", \
   "-Djava.security.egd=file:/dev/./urandom", \
+  "-Djava.net.preferIPv4Stack=true", \
   "-Xmx512m", "-Xms256m", \
   "-jar", "app.jar"]

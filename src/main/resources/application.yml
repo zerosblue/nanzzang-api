@@ -7,6 +7,10 @@ spring:
     username: ${DB_USERNAME:nanzzang}
     password: ${DB_PASSWORD:nanzzang_password}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      initialization-fail-timeout: -1
+      connection-timeout: 30000
+      validation-timeout: 5000
 
   jpa:
     hibernate:
