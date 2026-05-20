@@ -38,7 +38,7 @@ spring:
               - profile
 
 jwt:
-  secret: ${JWT_SECRET:dmVyWV9zRWNSZVRfa0V5X0ZvUl9uQW5aekFuR19wUm9KZUN0X2FUX2xFYVNUXzMyX2JZdEVzX2xPbkc=}
+  secret: ${JWT_SECRET:Ift-WasJ75W45JxTTwNIzBVReP7tJUD2NOk1vohT-XQ=}
   access-token-validity-in-seconds: 900
   refresh-token-validity-in-seconds: 604800
 
