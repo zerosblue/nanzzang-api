@@ -106,6 +106,7 @@ public class AuthService {
                 .email(user.getEmail())
                 .nickname(user.getNickname())
                 .role(user.getRole())
+                .grade(user.getGrade().name())
                 .build();
     }
 }
