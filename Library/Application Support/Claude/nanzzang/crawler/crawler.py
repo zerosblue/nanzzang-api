@@ -24,6 +24,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 API_URL = os.getenv("NANZZANG_API_URL", "http://localhost:8080")
+ELECTION_MODE = os.getenv("ELECTION_MODE", "false").lower() == "true"
 BOT_EMAIL = os.getenv("NANZZANG_EMAIL", "bot@nanzzang.com")
 BOT_NICKNAME = os.getenv("NANZZANG_NICKNAME", "난장봇")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "test1@nanzzang.com")
@@ -205,16 +206,25 @@ def fetch_recent_topics(token: str, size: int = 20) -> list[dict]:
         return []
 
 
-def pick_target_categories(recent_topics: list[dict], count: int) -> list[str]:
-    """최근 토픽의 카테고리 분포를 보고 덜 쓰인 카테고리 우선 선택"""
+def pick_target_categories(recent_topics: list[dict], count: int, election_mode: bool = False) -> list[str]:
+    """최근 토픽의 카테고리 분포를 보고 덜 쓰인 카테고리 우선 선택.
+    election_mode=True면 절반 이상을 politics로 강제 배정."""
     from collections import Counter
     recent_cats = [t.get("category", "") for t in recent_topics[:10]]
     cat_count = Counter(recent_cats)
 
-    # 카테고리별 사용 횟수 오름차순 정렬 → 덜 쓰인 것 우선
     sorted_cats = sorted(ALL_CATEGORIES, key=lambda c: cat_count.get(c, 0))
 
-    # count개 선택 (순환)
+    if election_mode:
+        # 절반(올림) politics 고정, 나머지는 일반 분배
+        politics_slots = (count + 1) // 2
+        other_slots = count - politics_slots
+        others = [c for c in sorted_cats if c != "politics"]
+        targets = ["politics"] * politics_slots
+        for i in range(other_slots):
+            targets.append(others[i % len(others)])
+        return targets
+
     targets = []
     for i in range(count):
         targets.append(sorted_cats[i % len(sorted_cats)])
@@ -222,7 +232,8 @@ def pick_target_categories(recent_topics: list[dict], count: int) -> list[str]:
 
 
 def generate_topics_with_ai(
-    headlines: list[str], count: int = 5, recent_topics: list[dict] = None
+    headlines: list[str], count: int = 5, recent_topics: list[dict] = None,
+    election_mode: bool = False,
 ) -> list[dict]:
     """Claude AI로 NANZZANG 스타일 대결 토픽 생성"""
     client = Anthropic()
@@ -232,7 +243,7 @@ def generate_topics_with_ai(
 
     # 최근 토픽 컨텍스트 구성
     recent_topics = recent_topics or []
-    target_categories = pick_target_categories(recent_topics, count)
+    target_categories = pick_target_categories(recent_topics, count, election_mode=election_mode)
 
     recent_titles_text = ""
     if recent_topics:
@@ -248,10 +259,20 @@ def generate_topics_with_ai(
         for i, cat in enumerate(target_categories)
     )
 
+    election_guide = ""
+    if election_mode:
+        election_guide = """
+[선거 모드 — politics 카테고리 토픽 작성 특별 지침]
+- 지금은 선거 기간이다. 정치 토픽은 실제 선거 이슈·후보·정당 갈등을 직접 건드려라
+- 예시 소재: 공약 비교, 후보 자질 논란, 지지층 충돌, 정권 심판론 vs 안정론, 투표 인증 논란
+- 특정 정당/후보를 일방적으로 비하하는 건 금지, 하지만 진영 대립 구도는 최대한 날카롭게
+- A팀/B팀 이름은 실제 갈등 진영을 반영해라 (예: "심판해야" vs "지켜야", "정권교체" vs "정권유지")
+"""
+
     prompt = f"""오늘은 {today}이다. 아래는 오늘 네이버/다음 뉴스 헤드라인이다.
 
 {headlines_text}
-{recent_titles_text}
+{recent_titles_text}{election_guide}
 위 뉴스를 기반으로 NANZZANG(익명 갈등 대결 커뮤니티)에 올릴 극단적인 대결 토픽 {count}개를 만들어라.
 
 NANZZANG의 정체성:
@@ -782,9 +803,10 @@ def run_debate_bots(topic_result: dict):
 # ─── 메인 ─────────────────────────────────────────────────────────────────────
 
 
-def run(count: int = 5, dry_run: bool = False):
+def run(count: int = 5, dry_run: bool = False, election_mode: bool = False):
     print("=" * 60)
-    print("  NANZZANG 크롤러 봇 시작")
+    label = "  NANZZANG 크롤러 봇 시작" + (" [선거 모드 🗳️]" if election_mode else "")
+    print(label)
     print("=" * 60)
 
     # 1. 헤드라인 수집
@@ -802,7 +824,7 @@ def run(count: int = 5, dry_run: bool = False):
 
     # 3. AI 토픽 생성
     print(f"\n[3단계] Claude AI로 토픽 {count}개 생성 중...")
-    topics = generate_topics_with_ai(headlines, count, recent_topics)
+    topics = generate_topics_with_ai(headlines, count, recent_topics, election_mode=election_mode)
 
     if dry_run:
         print("\n[Dry Run] 생성된 토픽 미리보기:")
@@ -832,7 +854,10 @@ if __name__ == "__main__":
     parser.add_argument("--count", type=int, default=5, help="생성할 토픽 수 (기본값: 5)")
     parser.add_argument("--dry-run", action="store_true", help="API 등록 없이 미리보기만")
     parser.add_argument("--clean", action="store_true", help="유사/중복 토픽 일회성 정리 (수동 실행 전용)")
+    parser.add_argument("--election", action="store_true", help="선거 모드: 정치 토픽 비중 절반 이상으로 증가")
     args = parser.parse_args()
+
+    election = args.election or ELECTION_MODE
 
     if args.clean:
         print("=" * 60)
@@ -841,4 +866,4 @@ if __name__ == "__main__":
         token = get_bot_token()
         clean_similar_topics(token)
     else:
-        run(count=args.count, dry_run=args.dry_run)
+        run(count=args.count, dry_run=args.dry_run, election_mode=election)
