@@ -7,6 +7,9 @@ import com.nanzzang.api.domain.repository.UserRepository;
 import com.nanzzang.api.dto.*;
 import com.nanzzang.api.security.JwtProvider;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -22,6 +25,7 @@ import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -31,7 +35,9 @@ public class AuthService {
     private final JwtProvider jwtProvider;
     private final TelegramNotificationService telegramNotificationService;
     private final PasswordEncoder passwordEncoder;
-    private final JavaMailSender mailSender;
+
+    @Setter(onMethod_ = @Autowired(required = false))
+    private JavaMailSender mailSender;
 
     @Value("${spring.security.oauth2.client.registration.google.client-id}")
     private String googleClientId;
@@ -95,6 +101,11 @@ public class AuthService {
 
         User user = userOpt.get();
         if (user.getPasswordHash() == null) return; // 구글 전용 계정은 무시
+
+        if (mailSender == null) {
+            log.warn("메일 서비스 미설정 (MAIL_USERNAME/MAIL_PASSWORD 환경변수 확인 필요)");
+            throw new IllegalStateException("메일 서비스가 설정되지 않았습니다. 관리자에게 문의해주세요.");
+        }
 
         String token = UUID.randomUUID().toString();
         passwordResetTokenRepository.save(PasswordResetToken.builder()
