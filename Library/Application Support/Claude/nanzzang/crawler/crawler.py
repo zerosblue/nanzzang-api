@@ -207,27 +207,28 @@ def fetch_recent_topics(token: str, size: int = 20) -> list[dict]:
 
 
 def pick_target_categories(recent_topics: list[dict], count: int, election_mode: bool = False) -> list[str]:
-    """최근 토픽의 카테고리 분포를 보고 덜 쓰인 카테고리 우선 선택.
+    """정치 40% 고정, 나머지는 덜 쓰인 카테고리 우선 배정.
     election_mode=True면 절반 이상을 politics로 강제 배정."""
     from collections import Counter
     recent_cats = [t.get("category", "") for t in recent_topics[:10]]
     cat_count = Counter(recent_cats)
 
-    sorted_cats = sorted(ALL_CATEGORIES, key=lambda c: cat_count.get(c, 0))
-
     if election_mode:
-        # 절반(올림) politics 고정, 나머지는 일반 분배
         politics_slots = (count + 1) // 2
         other_slots = count - politics_slots
-        others = [c for c in sorted_cats if c != "politics"]
+        others = sorted([c for c in ALL_CATEGORIES if c != "politics"], key=lambda c: cat_count.get(c, 0))
         targets = ["politics"] * politics_slots
         for i in range(other_slots):
             targets.append(others[i % len(others)])
         return targets
 
-    targets = []
-    for i in range(count):
-        targets.append(sorted_cats[i % len(sorted_cats)])
+    # 정치 40% 고정 (5개 기준 2개)
+    politics_slots = max(1, round(count * 0.4))
+    other_slots = count - politics_slots
+    others = sorted([c for c in ALL_CATEGORIES if c != "politics"], key=lambda c: cat_count.get(c, 0))
+    targets = ["politics"] * politics_slots
+    for i in range(other_slots):
+        targets.append(others[i % len(others)])
     return targets
 
 
@@ -273,26 +274,56 @@ def generate_topics_with_ai(
 
 {headlines_text}
 {recent_titles_text}{election_guide}
-위 뉴스를 기반으로 NANZZANG(익명 갈등 대결 커뮤니티)에 올릴 극단적인 대결 토픽 {count}개를 만들어라.
+위 뉴스를 기반으로 NANZZANG(익명 갈등 대결 커뮤니티)에 올릴 폭발적인 대결 토픽 {count}개를 만들어라.
 
 NANZZANG의 정체성:
-- 세상의 모든 갈등, 분노, 대립을 담는 전쟁터다
-- 중립은 없다. 반드시 A팀 아니면 B팀이다
-- 사람들이 격렬하게 편을 가르고 싸우게 만들어야 한다
-- "이건 내 얘기다" "내 주변 이야기다" 싶은 공감 폭발 주제가 최고다
+- 대한민국의 모든 갈등, 분노, 적대감을 폭발시키는 전쟁터다
+- 중립은 죽음이다. 반드시 A팀 아니면 B팀이다
+- 읽는 순간 "씨X 저거 맞지" 또는 "저건 진짜 아니지" 반응이 터져야 한다
+- 온라인 커뮤니티에서 캡처해서 퍼날라야 할 만큼 자극적이어야 한다
+
+[정치 토픽 특별 지침 — politics 카테고리 필수 적용]
+핵심 원칙: 보수와 진보가 각자 "저 새끼들 진짜 X같네" 하며 달려드는 구도를 만들어라.
+한쪽이 일방적으로 욕먹는 구도 X → 양쪽 다 격하게 싸울 수 있는 구도 O
+
+활용할 갈등 소재 (뉴스와 연결해서 사용):
+- 탄핵/반탄핵 진영 충돌 — 서로가 서로를 매국노·내로남불로 보는 구도
+- 정권 심판 vs 야당 심판 — "이 정권이 더 X" vs "야당이 집권하면 더 X"
+- 586운동권 vs MZ보수 — 세대+이념 복합 갈등
+- 친미 vs 친중 외교 노선 충돌
+- 검찰개혁 찬반 — "검찰공화국" vs "방탄방패"
+- 언론 편향 논란 — "조중동 쓰레기" vs "한겨레 좌빨"
+- 노조·파업 갈등 — "귀족노조" vs "노동탄압"
+- 부동산 정책 — "집값 올린 건 민주당" vs "집값 올린 건 국힘"
+
+A/B팀 이름 예시 (이 수준의 날카로움):
+- "탄핵당연" vs "탄핵역적"
+- "정권심판" vs "야당심판"
+- "검찰해체" vs "방탄해체"
+- "운동권OUT" vs "MZ꼴통"
+- "조중동폐간" vs "한겨레폐간"
+
+정치인 실명·정당명 직접 언급 가능, 단 허위사실 적시 금지.
+양쪽 모두 격하게 공감하고 싸울 수 있어야 한다 — 한쪽 편들기 X, 전쟁터 만들기 O
 
 제목 작성 규칙:
-1. 제목은 도발적이고 직설적이어야 한다 ("당신은 어느 편?" 식의 싱거운 표현 금지)
-2. 뉴스를 일상의 갈등으로 재해석해라 (예: 직장, 연애, 가족, 돈, 세대갈등 등)
-3. "솔직히 ~하는 게 맞지 않냐?" / "~는 진짜 문제가 있는 거 아냐?" 식의 자극적 어투 적극 활용
-4. 혐오·차별(인종, 성별 비하 등)은 절대 금지, 하지만 갈등과 논쟁은 최대한 자극적으로
-5. 최근 등록된 토픽과 주제·소재가 겹치면 절대 안 됨
+1. 제목 첫 글자부터 도발 — 읽자마자 욕 나오거나 격하게 공감해야 함
+2. "~하는 거 진짜 아니지 않냐?", "~은 솔직히 X같지 않냐?", "~이 맞냐 틀리냐" 직격탄 문체
+3. 뉴스를 한국인의 실제 분노 포인트로 재해석해라 (계층갈등, 세대갈등, 정치혐오 등)
+4. 제목만 봐도 댓글 1000개 달릴 것 같아야 함
+5. 혐오·차별(인종, 성별 비하 등)은 절대 금지, 하지만 갈등·분노·논쟁은 최대한 날카롭게
+6. 최근 등록된 토픽과 주제·소재가 겹치면 절대 안 됨
+
+body 작성 규칙:
+- 독자의 분노 또는 공감을 즉시 폭발시켜야 한다
+- "이 상황을 모르면 간첩" 수준으로 핵심 쟁점을 날카롭게 정리
+- 마지막 문장은 반드시 편 가르기 유도 ("너는 어느 편이냐", "진짜 X같지 않냐" 식으로)
 
 A팀/B팀 이름 규칙:
-- 두 진영이 극단적으로 대립해야 한다
-- 예시: "무조건 해고" vs "당연히 이해", "꼰대 맞음" vs "요즘것들 문제", "배신자" vs "현실주의자"
+- 읽는 순간 즉각 한 팀에 감정이입이 되어야 한다
+- 예시: "당연히탄핵" vs "탄핵반대", "민주당OUT" vs "국힘이더문제", "586청산" vs "586이맞다"
 - 짧고 강렬하게, 최대 8자 이내
-- 중립적 표현 절대 금지 ("찬성" "반대" 같은 밍밍한 표현 X)
+- "찬성" "반대" "지지" "반대" 같은 무색무취 표현 절대 금지
 
 카테고리 배분 — 반드시 아래 지시를 따를 것:
 {category_assignments}
@@ -300,8 +331,8 @@ A팀/B팀 이름 규칙:
 아래 JSON 형식으로만 반환해라. 절대 다른 텍스트 없이 JSON만:
 [
   {{
-    "title": "자극적인 대결 주제 제목 (최대 50자, 마침표 없이)",
-    "body": "이 갈등의 배경과 핵심 쟁점을 2-3문장으로. 독자가 즉시 편을 고르고 싶게 만들어라.",
+    "title": "폭발적 대결 주제 제목 (최대 50자, 마침표 없이)",
+    "body": "분노와 공감을 즉시 폭발시키는 배경 설명 2-3문장. 마지막은 편 가르기 유도.",
     "category": "카테고리",
     "teamAName": "극단적 A진영 이름 (최대 8자)",
     "teamBName": "극단적 B진영 이름 (최대 8자)",
