@@ -131,18 +131,27 @@ HTML 본문 작성 규칙:
     response = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=5000,
+        tools=[{
+            "name": "create_blog_post",
+            "description": "SEO 최적화 블로그 포스트 데이터 반환",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "블로그 글 제목 (40-60자)"},
+                    "meta_description": {"type": "string", "description": "메타 디스크립션 (120자 이내)"},
+                    "html": {"type": "string", "description": "HTML 본문 (최소 1500자)"},
+                    "tags": {"type": "array", "items": {"type": "string"}, "description": "SEO 태그 3-5개"},
+                    "related_topic_ids": {"type": "array", "items": {"type": "string"}, "description": "관련 NANZZANG 토픽 UUID"},
+                    "chosen_headline": {"type": "string", "description": "선택한 뉴스 헤드라인"},
+                },
+                "required": ["title", "meta_description", "html", "tags", "chosen_headline"],
+            },
+        }],
+        tool_choice={"type": "tool", "name": "create_blog_post"},
         messages=[{"role": "user", "content": prompt}],
     )
 
-    raw = response.content[0].text.strip()
-    if "```" in raw:
-        parts = raw.split("```")
-        raw = parts[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    raw = raw.strip()
-
-    data = json.loads(raw)
+    data = response.content[0].input
     print(f"  선택된 헤드라인: {data.get('chosen_headline', '?')}")
     return data
 
