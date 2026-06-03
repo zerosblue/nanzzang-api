@@ -1,5 +1,6 @@
 package com.nanzzang.api.service;
 
+import com.nanzzang.api.domain.Comment;
 import com.nanzzang.api.domain.Topic;
 import com.nanzzang.api.domain.User;
 import com.nanzzang.api.domain.Participation;
@@ -18,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -116,6 +118,29 @@ public class TopicService {
         int commentCount = commentRepository.findByTopicIdAndParentIsNullOrderByCreatedAtDesc(topicId).size();
         double score = totalVotes * 1.0 + commentCount * 2.0 + topic.getViewCount() * 0.1;
         topic.updateHotScore(score);
+    }
+
+    @Transactional
+    public void deleteTopic(UUID topicId) {
+        Topic topic = topicRepository.findById(topicId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 토픽입니다"));
+        List<Comment> rootComments =
+                commentRepository.findByTopicIdAndParentIsNullOrderByCreatedAtDesc(topicId);
+        commentRepository.deleteAll(rootComments);
+        participationRepository.deleteAll(participationRepository.findByTopicId(topicId));
+        topicRepository.delete(topic);
+    }
+
+    @Transactional
+    public void deleteAllTopics() {
+        List<Topic> all = topicRepository.findAll();
+        for (Topic t : all) {
+            List<Comment> roots =
+                    commentRepository.findByTopicIdAndParentIsNullOrderByCreatedAtDesc(t.getId());
+            commentRepository.deleteAll(roots);
+            participationRepository.deleteAll(participationRepository.findByTopicId(t.getId()));
+        }
+        topicRepository.deleteAll(all);
     }
 
     private TopicResponse toResponse(Topic topic) {

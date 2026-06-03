@@ -80,6 +80,13 @@ public class CommentService {
     }
 
     @Transactional
+    public void deleteComment(UUID commentId) {
+        Comment comment = commentRepository.findById(commentId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 댓글입니다"));
+        commentRepository.delete(comment);
+    }
+
+    @Transactional
     public CommentResponse toggleLike(UUID commentId) {
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 댓글입니다"));

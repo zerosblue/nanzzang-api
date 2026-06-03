@@ -7,4 +7,5 @@ import java.util.UUID;
 
 public interface CommentRepository extends JpaRepository<Comment, UUID> {
     List<Comment> findByTopicIdAndParentIsNullOrderByCreatedAtDesc(UUID topicId);
+    List<Comment> findByTopicId(UUID topicId);
 }

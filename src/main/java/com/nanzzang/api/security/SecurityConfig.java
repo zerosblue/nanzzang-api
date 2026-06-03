@@ -43,6 +43,10 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/health").permitAll()
                 .requestMatchers("/api/v1/auth/**").permitAll()
+                .requestMatchers("/api/v1/admin/**").authenticated()
+                .requestMatchers("/api/v1/topics/admin/**").authenticated()
+                .requestMatchers("/api/v1/comments/admin/**").authenticated()
+                .requestMatchers("/api/v1/users/admin/**").authenticated()
                 .requestMatchers(HttpMethod.GET, "/api/v1/topics/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/comments/topic/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/comments/topic/**").authenticated()
