@@ -37,7 +37,7 @@ public class TopicService {
         if (category != null && !category.equals("all")) {
             topics = topicRepository.findByCategoryOrderByCreatedAtDesc(category, pageable);
         } else if ("hot".equals(sort)) {
-            topics = topicRepository.findAllByOrderByHotScoreDesc(pageable);
+            topics = topicRepository.findAllOrderByActiveFirstThenHotScore(LocalDateTime.now(), pageable);
         } else {
             topics = topicRepository.findAllByOrderByCreatedAtDesc(pageable);
         }
