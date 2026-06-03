@@ -31,9 +31,14 @@ public class TopicResponse {
     private LocalDateTime createdAt;
     private LocalDateTime expiresAt;
     private boolean isClosed;
+    private String winningTeam;
     private List<String> images;
 
     public static TopicResponse from(Topic topic, int teamAVotes, int teamBVotes, int commentCount) {
+        return from(topic, teamAVotes, teamBVotes, commentCount, topic.getViewCount());
+    }
+
+    public static TopicResponse from(Topic topic, int teamAVotes, int teamBVotes, int commentCount, int viewCount) {
         int total = teamAVotes + teamBVotes;
         String raw = topic.getImageUrls();
         List<String> images = (raw != null && !raw.isBlank())
@@ -51,13 +56,14 @@ public class TopicResponse {
                 .teamBVotes(teamBVotes)
                 .commentCount(commentCount)
                 .participantCount(total)
-                .viewCount(topic.getViewCount())
+                .viewCount(viewCount)
                 .hotScore(topic.getHotScore())
                 .isHot(topic.getHotScore() > 50)
                 .author(topic.getAuthor().getNickname())
                 .createdAt(topic.getCreatedAt())
                 .expiresAt(topic.getExpiresAt())
                 .isClosed(topic.isClosed())
+                .winningTeam(topic.getWinningTeam())
                 .images(images)
                 .build();
     }

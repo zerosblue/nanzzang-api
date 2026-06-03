@@ -1,11 +1,12 @@
 package com.nanzzang.api.service;
 
-import com.nanzzang.api.domain.Comment;
+import com.nanzzang.api.domain.Participation;
+import com.nanzzang.api.domain.SpectatorVote;
 import com.nanzzang.api.domain.Topic;
 import com.nanzzang.api.domain.User;
-import com.nanzzang.api.domain.Participation;
 import com.nanzzang.api.domain.repository.CommentRepository;
 import com.nanzzang.api.domain.repository.ParticipationRepository;
+import com.nanzzang.api.domain.repository.SpectatorVoteRepository;
 import com.nanzzang.api.domain.repository.TopicRepository;
 import com.nanzzang.api.domain.repository.UserRepository;
 import com.nanzzang.api.dto.ParticipateRequest;
@@ -15,11 +16,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -31,6 +32,10 @@ public class TopicService {
     private final UserRepository userRepository;
     private final ParticipationRepository participationRepository;
     private final CommentRepository commentRepository;
+    private final SpectatorVoteRepository spectatorVoteRepository;
+    private final RedisTemplate<String, Object> redisTemplate;
+
+    private static final String VIEW_COUNT_PREFIX = "viewcount:";
 
     public Page<TopicResponse> getTopics(String sort, String category, int page, int size) {
         Pageable pageable = PageRequest.of(page, size);
@@ -79,11 +84,36 @@ public class TopicService {
         return toResponse(saved);
     }
 
+    public java.util.Optional<String> getMyParticipation(UUID topicId, UUID userId) {
+        return participationRepository.findByTopicIdAndUserId(topicId, userId)
+                .map(Participation::getTeamSide);
+    }
+
     @Transactional
+    public void deleteTopic(UUID topicId) {
+        Topic topic = topicRepository.findById(topicId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 토픽입니다"));
+        commentRepository.findByTopicIdAndParentIsNullOrderByCreatedAtDesc(topicId)
+                .forEach(c -> commentRepository.delete(c));
+        participationRepository.findByTopicId(topicId)
+                .forEach(p -> participationRepository.delete(p));
+        topicRepository.delete(topic);
+    }
+
+    @Transactional
+    public void deleteAllTopics() {
+        topicRepository.findAll().forEach(topic -> {
+            participationRepository.findByTopicId(topic.getId())
+                    .forEach(p -> participationRepository.delete(p));
+        });
+        commentRepository.deleteAll();
+        topicRepository.deleteAll();
+    }
+
     public TopicResponse incrementViewCount(UUID id) {
         Topic topic = topicRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 토픽입니다: " + id));
-        topic.incrementViewCount();
+        redisTemplate.opsForValue().increment(VIEW_COUNT_PREFIX + id);
         return toResponse(topic);
     }
 
@@ -115,38 +145,38 @@ public class TopicService {
         // hotScore 업데이트
         int totalVotes = participationRepository.countByTopicIdAndTeamSide(topicId, "A")
                 + participationRepository.countByTopicIdAndTeamSide(topicId, "B");
-        int commentCount = commentRepository.findByTopicIdAndParentIsNullOrderByCreatedAtDesc(topicId).size();
+        int commentCount = commentRepository.countByTopicId(topicId);
         double score = totalVotes * 1.0 + commentCount * 2.0 + topic.getViewCount() * 0.1;
         topic.updateHotScore(score);
     }
 
     @Transactional
-    public void deleteTopic(UUID topicId) {
+    public void castSpectatorVote(UUID topicId, UUID userId, String teamSide) {
         Topic topic = topicRepository.findById(topicId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 토픽입니다"));
-        List<Comment> rootComments =
-                commentRepository.findByTopicIdAndParentIsNullOrderByCreatedAtDesc(topicId);
-        commentRepository.deleteAll(rootComments);
-        participationRepository.deleteAll(participationRepository.findByTopicId(topicId));
-        topicRepository.delete(topic);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다"));
+
+        spectatorVoteRepository.findByTopicIdAndUserId(topicId, userId)
+                .ifPresentOrElse(
+                    existing -> existing.updateTeamSide(teamSide),
+                    () -> spectatorVoteRepository.save(
+                        SpectatorVote.builder().topic(topic).user(user).teamSide(teamSide).build()
+                    )
+                );
     }
 
-    @Transactional
-    public void deleteAllTopics() {
-        List<Topic> all = topicRepository.findAll();
-        for (Topic t : all) {
-            List<Comment> roots =
-                    commentRepository.findByTopicIdAndParentIsNullOrderByCreatedAtDesc(t.getId());
-            commentRepository.deleteAll(roots);
-            participationRepository.deleteAll(participationRepository.findByTopicId(t.getId()));
-        }
-        topicRepository.deleteAll(all);
+    public java.util.Optional<String> getMySpectatorVote(UUID topicId, UUID userId) {
+        return spectatorVoteRepository.findByTopicIdAndUserId(topicId, userId)
+                .map(SpectatorVote::getTeamSide);
     }
 
     private TopicResponse toResponse(Topic topic) {
         int teamAVotes = participationRepository.countByTopicIdAndTeamSide(topic.getId(), "A");
         int teamBVotes = participationRepository.countByTopicIdAndTeamSide(topic.getId(), "B");
-        int commentCount = commentRepository.findByTopicIdAndParentIsNullOrderByCreatedAtDesc(topic.getId()).size();
-        return TopicResponse.from(topic, teamAVotes, teamBVotes, commentCount);
+        int commentCount = commentRepository.countByTopicId(topic.getId());
+        Object redisDelta = redisTemplate.opsForValue().get(VIEW_COUNT_PREFIX + topic.getId());
+        int viewCount = topic.getViewCount() + (redisDelta != null ? Integer.parseInt(redisDelta.toString()) : 0);
+        return TopicResponse.from(topic, teamAVotes, teamBVotes, commentCount, viewCount);
     }
 }

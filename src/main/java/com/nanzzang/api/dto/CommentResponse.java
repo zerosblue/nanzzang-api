@@ -20,6 +20,8 @@ public class CommentResponse {
     private String content;
     private int likeCount;
     private String author;
+    private String authorGrade;
+    private boolean isBot;
     private LocalDateTime createdAt;
     private List<CommentResponse> children;
 
@@ -32,6 +34,8 @@ public class CommentResponse {
                 .content(comment.getContent())
                 .likeCount(comment.getLikeCount())
                 .author(comment.getUser().getNickname())
+                .authorGrade(comment.getUser().getGrade().name())
+                .isBot(comment.getUser().isBot())
                 .createdAt(comment.getCreatedAt())
                 .children(comment.getChildren() != null
                         ? comment.getChildren().stream()

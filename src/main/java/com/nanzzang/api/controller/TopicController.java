@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -24,13 +25,11 @@ public class TopicController {
     private final TopicService topicService;
     private final UserRepository userRepository;
 
-    private void validateAdmin(Authentication authentication) {
-        UUID userId = (UUID) authentication.getPrincipal();
+    private void validateAdmin(Authentication auth) {
+        UUID userId = (UUID) auth.getPrincipal();
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다"));
-        if (!"ADMIN".equals(user.getRole())) {
-            throw new SecurityException("관리자 권한이 필요합니다");
-        }
+        if (!"ADMIN".equals(user.getRole())) throw new SecurityException("관리자 권한이 필요합니다");
     }
 
     @GetMapping
@@ -56,18 +55,17 @@ public class TopicController {
         return ResponseEntity.ok(topicService.createTopic(userId, request));
     }
 
-    @PostMapping("/{id}/participate")
-    public ResponseEntity<Void> participate(
-            @PathVariable UUID id,
-            Authentication authentication,
-            @Valid @RequestBody ParticipateRequest request) {
+    @GetMapping("/{id}/my-participation")
+    public ResponseEntity<?> getMyParticipation(@PathVariable UUID id, Authentication authentication) {
+        if (authentication == null) return ResponseEntity.status(401).build();
         UUID userId = (UUID) authentication.getPrincipal();
-        topicService.participate(id, userId, request);
-        return ResponseEntity.ok().build();
+        return topicService.getMyParticipation(id, userId)
+                .map(side -> ResponseEntity.ok(Map.of("teamSide", side)))
+                .orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/admin/all")
-    public ResponseEntity<Page<TopicResponse>> getAdminTopics(
+    public ResponseEntity<Page<TopicResponse>> getAllTopicsForAdmin(
             Authentication authentication,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
@@ -76,21 +74,50 @@ public class TopicController {
     }
 
     @DeleteMapping("/admin/{id}")
-    public ResponseEntity<Void> deleteTopic(Authentication authentication, @PathVariable UUID id) {
+    public ResponseEntity<Void> adminDeleteTopic(Authentication authentication, @PathVariable UUID id) {
         validateAdmin(authentication);
         topicService.deleteTopic(id);
         return ResponseEntity.ok().build();
     }
 
     @DeleteMapping("/admin/all")
-    public ResponseEntity<Void> deleteAllTopics(Authentication authentication) {
+    public ResponseEntity<Void> adminDeleteAllTopics(Authentication authentication) {
         validateAdmin(authentication);
         topicService.deleteAllTopics();
         return ResponseEntity.ok().build();
     }
 
     @ExceptionHandler(SecurityException.class)
-    public ResponseEntity<String> handleSecurityException(SecurityException e) {
+    public ResponseEntity<String> handleSecurity(SecurityException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
+    }
+
+    @PostMapping("/{id}/spectator-vote")
+    public ResponseEntity<Void> castSpectatorVote(
+            @PathVariable UUID id,
+            Authentication authentication,
+            @RequestBody Map<String, String> body) {
+        UUID userId = (UUID) authentication.getPrincipal();
+        topicService.castSpectatorVote(id, userId, body.get("teamSide"));
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/{id}/my-spectator-vote")
+    public ResponseEntity<?> getMySpectatorVote(@PathVariable UUID id, Authentication authentication) {
+        if (authentication == null) return ResponseEntity.status(401).build();
+        UUID userId = (UUID) authentication.getPrincipal();
+        return topicService.getMySpectatorVote(id, userId)
+                .map(side -> ResponseEntity.ok(Map.of("teamSide", side)))
+                .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PostMapping("/{id}/participate")
+    public ResponseEntity<Void> participate(
+            @PathVariable UUID id,
+            Authentication authentication,
+            @Valid @RequestBody ParticipateRequest request) {
+        UUID userId = (UUID) authentication.getPrincipal();
+        topicService.participate(id, userId, request);
+        return ResponseEntity.ok().build();
     }
 }

@@ -2,11 +2,14 @@ package com.nanzzang.api.service;
 
 import com.nanzzang.api.domain.Participation;
 import com.nanzzang.api.domain.Topic;
+import com.nanzzang.api.domain.User;
 import com.nanzzang.api.domain.repository.CommentRepository;
 import com.nanzzang.api.domain.repository.ParticipationRepository;
 import com.nanzzang.api.domain.repository.TopicRepository;
+import com.nanzzang.api.domain.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,6 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -24,6 +29,10 @@ public class TopicScheduler {
     private final ParticipationRepository participationRepository;
     private final CommentRepository commentRepository;
     private final NotificationService notificationService;
+    private final UserRepository userRepository;
+    private final RedisTemplate<String, Object> redisTemplate;
+
+    private static final String VIEW_COUNT_PREFIX = "viewcount:";
 
     // 매 1분마다 실행 (실제 상용에서는 10분이나 1시간 단위로 조절 가능)
     @Scheduled(cron = "0 * * * * *")
@@ -59,13 +68,18 @@ public class TopicScheduler {
             topic.closeTopic(winningTeam);
             log.info("토픽 종료 완료 [{}] 승리 팀: {}", topic.getTitle(), winningTeam);
 
-            // 참전자들에게 결과 알림
+            // 참전자들에게 결과 알림 + 승자 winCount 증가
             String finalWinner = winningTeam;
             List<Participation> participants = participationRepository.findByTopicId(topic.getId());
             String winTeamName = "A".equals(winningTeam) ? topic.getTeamAName()
                     : "B".equals(winningTeam) ? topic.getTeamBName() : "무승부";
             for (Participation p : participants) {
                 boolean isWinner = p.getTeamSide().equals(finalWinner);
+                if (isWinner) {
+                    User user = p.getUser();
+                    user.incrementWinCount();
+                    userRepository.save(user);
+                }
                 notificationService.send(p.getUser().getId(), "topic_closed", Map.of(
                     "topicId", topic.getId().toString(),
                     "topicTitle", topic.getTitle(),
@@ -78,6 +92,31 @@ public class TopicScheduler {
         if (!expiredTopics.isEmpty()) {
             topicRepository.saveAll(expiredTopics);
             log.info("총 {}개의 토픽이 종료 처리되었습니다.", expiredTopics.size());
+        }
+    }
+
+    // 매 5분마다 Redis에 누적된 viewCount를 DB에 반영
+    @Scheduled(cron = "0 */5 * * * *")
+    @Transactional
+    public void flushViewCounts() {
+        Set<String> keys = redisTemplate.keys(VIEW_COUNT_PREFIX + "*");
+        if (keys == null || keys.isEmpty()) return;
+
+        for (String key : keys) {
+            try {
+                Object raw = redisTemplate.opsForValue().get(key);
+                if (raw == null) continue;
+                long delta = Long.parseLong(raw.toString());
+                if (delta <= 0) continue;
+
+                // 읽은 만큼만 차감 (새로 들어오는 increment 보존)
+                redisTemplate.opsForValue().increment(key, -delta);
+
+                UUID topicId = UUID.fromString(key.substring(VIEW_COUNT_PREFIX.length()));
+                topicRepository.incrementViewCount(topicId, delta);
+            } catch (Exception e) {
+                log.warn("viewCount flush 실패 — key: {}, error: {}", key, e.getMessage());
+            }
         }
     }
 }

@@ -1,8 +1,10 @@
 package com.nanzzang.api.service;
 
 import com.nanzzang.api.domain.Comment;
+import com.nanzzang.api.domain.CommentLike;
 import com.nanzzang.api.domain.Topic;
 import com.nanzzang.api.domain.User;
+import com.nanzzang.api.domain.repository.CommentLikeRepository;
 import com.nanzzang.api.domain.repository.CommentRepository;
 import com.nanzzang.api.domain.repository.TopicRepository;
 import com.nanzzang.api.domain.repository.UserRepository;
@@ -26,6 +28,7 @@ public class CommentService {
     private final CommentRepository commentRepository;
     private final TopicRepository topicRepository;
     private final UserRepository userRepository;
+    private final CommentLikeRepository commentLikeRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final NotificationService notificationService;
 
@@ -80,19 +83,30 @@ public class CommentService {
     }
 
     @Transactional
+    public CommentResponse toggleLike(UUID commentId, UUID userId) {
+        Comment comment = commentRepository.findById(commentId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 댓글입니다"));
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다"));
+
+        commentLikeRepository.findByCommentIdAndUserId(commentId, userId)
+                .ifPresentOrElse(
+                    existing -> {
+                        commentLikeRepository.delete(existing);
+                        comment.decrementLikeCount();
+                    },
+                    () -> {
+                        commentLikeRepository.save(CommentLike.builder().comment(comment).user(user).build());
+                        comment.incrementLikeCount();
+                    }
+                );
+        return CommentResponse.from(comment);
+    }
+
+    @Transactional
     public void deleteComment(UUID commentId) {
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 댓글입니다"));
         commentRepository.delete(comment);
-    }
-
-    @Transactional
-    public CommentResponse toggleLike(UUID commentId) {
-        Comment comment = commentRepository.findById(commentId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 댓글입니다"));
-
-        // 간단한 토글 - 실제로는 사용자별 좋아요 추적이 필요
-        comment.incrementLikeCount();
-        return CommentResponse.from(comment);
     }
 }

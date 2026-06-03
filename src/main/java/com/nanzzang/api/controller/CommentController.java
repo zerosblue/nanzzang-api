@@ -23,13 +23,11 @@ public class CommentController {
     private final CommentService commentService;
     private final UserRepository userRepository;
 
-    private void validateAdmin(Authentication authentication) {
-        UUID userId = (UUID) authentication.getPrincipal();
+    private void validateAdmin(Authentication auth) {
+        UUID userId = (UUID) auth.getPrincipal();
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다"));
-        if (!"ADMIN".equals(user.getRole())) {
-            throw new SecurityException("관리자 권한이 필요합니다");
-        }
+        if (!"ADMIN".equals(user.getRole())) throw new SecurityException("관리자 권한이 필요합니다");
     }
 
     @GetMapping("/topic/{topicId}")
@@ -47,19 +45,20 @@ public class CommentController {
     }
 
     @PostMapping("/{commentId}/like")
-    public ResponseEntity<CommentResponse> toggleLike(@PathVariable UUID commentId) {
-        return ResponseEntity.ok(commentService.toggleLike(commentId));
+    public ResponseEntity<CommentResponse> toggleLike(@PathVariable UUID commentId, Authentication authentication) {
+        UUID userId = (UUID) authentication.getPrincipal();
+        return ResponseEntity.ok(commentService.toggleLike(commentId, userId));
     }
 
     @DeleteMapping("/admin/{commentId}")
-    public ResponseEntity<Void> deleteCommentAdmin(Authentication authentication, @PathVariable UUID commentId) {
+    public ResponseEntity<Void> adminDeleteComment(Authentication authentication, @PathVariable UUID commentId) {
         validateAdmin(authentication);
         commentService.deleteComment(commentId);
         return ResponseEntity.ok().build();
     }
 
     @ExceptionHandler(SecurityException.class)
-    public ResponseEntity<String> handleSecurityException(SecurityException e) {
+    public ResponseEntity<String> handleSecurity(SecurityException e) {
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
     }
 }

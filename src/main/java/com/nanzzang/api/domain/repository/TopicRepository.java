@@ -4,6 +4,7 @@ import com.nanzzang.api.domain.Topic;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import java.time.LocalDateTime;
@@ -20,4 +21,8 @@ public interface TopicRepository extends JpaRepository<Topic, UUID> {
            "CASE WHEN t.isClosed = false AND t.expiresAt > :now THEN 0 ELSE 1 END ASC, " +
            "t.hotScore DESC")
     Page<Topic> findAllOrderByActiveFirstThenHotScore(@Param("now") LocalDateTime now, Pageable pageable);
+
+    @Modifying
+    @Query("UPDATE Topic t SET t.viewCount = t.viewCount + :delta WHERE t.id = :id")
+    void incrementViewCount(@Param("id") UUID id, @Param("delta") long delta);
 }

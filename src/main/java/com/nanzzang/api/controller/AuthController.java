@@ -1,12 +1,13 @@
 package com.nanzzang.api.controller;
 
-import com.nanzzang.api.dto.AuthRequest;
-import com.nanzzang.api.dto.AuthResponse;
+import com.nanzzang.api.dto.*;
 import com.nanzzang.api.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -15,19 +16,54 @@ public class AuthController {
 
     private final AuthService authService;
 
-    /**
-     * 개발용 간편 로그인/회원가입
-     * 이메일로 기존 회원이면 로그인, 없으면 자동 가입
-     */
+    /** 이메일+비밀번호+닉네임 회원가입 */
+    @PostMapping("/register")
+    public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
+        return ResponseEntity.ok(authService.register(request));
+    }
+
+    /** 이메일+비밀번호 로그인 */
+    @PostMapping("/email-login")
+    public ResponseEntity<AuthResponse> emailLogin(@Valid @RequestBody EmailLoginRequest request) {
+        return ResponseEntity.ok(authService.emailLogin(request));
+    }
+
+    /** 비밀번호 재설정 이메일 발송 */
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Map<String, String>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        authService.requestPasswordReset(request);
+        return ResponseEntity.ok(Map.of("message", "비밀번호 재설정 이메일을 발송했습니다."));
+    }
+
+    /** 비밀번호 재설정 처리 */
+    @PostMapping("/reset-password")
+    public ResponseEntity<Map<String, String>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request);
+        return ResponseEntity.ok(Map.of("message", "비밀번호가 재설정되었습니다."));
+    }
+
+    /** 봇 전용 간편 로그인 */
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthRequest request) {
         return ResponseEntity.ok(authService.loginOrRegister(request));
     }
 
-    // 추후 Google OAuth2 검증 및 JWT 발급 로직이 들어갈 뼈대
+    /** Google ID Token 로그인 / 자동 회원가입 */
     @PostMapping("/google")
-    public ResponseEntity<String> googleLogin(@RequestBody String idToken) {
-        // TODO: idToken 검증 후 User 정보 획득/저장 및 JWT 발급
-        return ResponseEntity.ok("JWT_TOKEN_PLACEHOLDER");
+    public ResponseEntity<AuthResponse> googleLogin(@RequestBody GoogleAuthRequest request) {
+        return ResponseEntity.ok(authService.googleLogin(request.getIdToken()));
+    }
+
+    /** Refresh Token으로 새 Access Token 발급 */
+    @PostMapping("/refresh")
+    public ResponseEntity<AuthResponse> refresh(@Valid @RequestBody RefreshRequest request) {
+        return ResponseEntity.ok(authService.refresh(request.getRefreshToken()));
+    }
+
+    /** 로그아웃 — Refresh Token 무효화 */
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(@Valid @RequestBody RefreshRequest request) {
+        authService.logout(request.getRefreshToken());
+        return ResponseEntity.ok().build();
     }
 }

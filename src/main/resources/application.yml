@@ -32,6 +32,10 @@ spring:
     multipart:
       max-file-size: 10MB
       max-request-size: 30MB
+    encoding:
+      charset: UTF-8
+      force: true
+      force-response: true
 
   security:
     oauth2:
@@ -44,6 +48,19 @@ spring:
               - email
               - profile
 
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+
 jwt:
   secret: ${JWT_SECRET:uteBFsIy9kgh8wrwNuVO5d6ihd2j5NcUg4nUL3am8gEPpHacoCHLCI5QBX8sxOBp}
   access-token-validity-in-seconds: 900
@@ -54,6 +71,13 @@ cors:
 
 file:
   upload-dir: ${UPLOAD_DIR:uploads}
+
+telegram:
+  bot-token: ${TELEGRAM_BOT_TOKEN:}
+  chat-id: ${TELEGRAM_CHAT_ID:}
+
+app:
+  frontend-url: ${FRONTEND_URL:https://nanzzang.vercel.app}
 
 server:
   port: ${PORT:8080}

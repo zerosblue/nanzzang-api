@@ -25,8 +25,11 @@ public class DataInitializer implements CommandLineRunner {
     @Transactional
     public void run(String... args) {
         try {
+        // 봇 계정은 항상 초기화 (없을 때만 생성)
+        initBotAccounts();
+
         // 이미 데이터가 있다면 기존 유저 중 test1을 관리자로 승격하고 종료
-        if (userRepository.count() > 0) {
+        if (userRepository.count() > 2) {
             userRepository.findByEmail("test1@nanzzang.com")
                     .ifPresent(user -> {
                         if (!"ADMIN".equals(user.getRole())) {
@@ -115,6 +118,27 @@ public class DataInitializer implements CommandLineRunner {
         topicRepository.save(topic4);
         } catch (Exception e) {
             log.warn("DataInitializer skipped: {}", e.getMessage());
+        }
+    }
+
+    private void initBotAccounts() {
+        if (userRepository.findByEmail("bot_a@nanzzang.com").isEmpty()) {
+            userRepository.save(User.builder()
+                    .email("bot_a@nanzzang.com")
+                    .nickname("🤖 AI-A팀논객")
+                    .isPro(false)
+                    .role("BOT")
+                    .build());
+            log.info("AI-A팀논객 봇 계정 생성");
+        }
+        if (userRepository.findByEmail("bot_b@nanzzang.com").isEmpty()) {
+            userRepository.save(User.builder()
+                    .email("bot_b@nanzzang.com")
+                    .nickname("🤖 AI-B팀논객")
+                    .isPro(false)
+                    .role("BOT")
+                    .build());
+            log.info("AI-B팀논객 봇 계정 생성");
         }
     }
 }
