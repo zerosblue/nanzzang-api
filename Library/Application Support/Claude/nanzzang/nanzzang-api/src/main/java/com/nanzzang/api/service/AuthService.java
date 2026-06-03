@@ -11,6 +11,7 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,6 +25,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -35,6 +37,7 @@ public class AuthService {
     private final JwtProvider jwtProvider;
     private final TelegramNotificationService telegramNotificationService;
     private final PasswordEncoder passwordEncoder;
+    private final RedisTemplate<String, Object> redisTemplate;
 
     @Setter(onMethod_ = @Autowired(required = false))
     private JavaMailSender mailSender;
@@ -47,6 +50,11 @@ public class AuthService {
 
     @Value("${spring.mail.username:}")
     private String mailFrom;
+
+    @Value("${jwt.refresh-token-validity-in-seconds}")
+    private long refreshTokenTtlSeconds;
+
+    private static final String REFRESH_KEY_PREFIX = "refresh:";
 
     /** 이메일+비밀번호+닉네임 회원가입 */
     @Transactional
@@ -71,6 +79,7 @@ public class AuthService {
 
         String token = jwtProvider.createToken(user.getId(), user.getEmail());
         String refreshToken = jwtProvider.createRefreshToken(user.getId());
+        storeRefreshToken(user.getId(), refreshToken);
         return buildResponse(user, token, refreshToken);
     }
 
@@ -90,6 +99,7 @@ public class AuthService {
 
         String token = jwtProvider.createToken(user.getId(), user.getEmail());
         String refreshToken = jwtProvider.createRefreshToken(user.getId());
+        storeRefreshToken(user.getId(), refreshToken);
         return buildResponse(user, token, refreshToken);
     }
 
@@ -173,6 +183,7 @@ public class AuthService {
 
         String token = jwtProvider.createToken(user.getId(), user.getEmail());
         String refreshToken = jwtProvider.createRefreshToken(user.getId());
+        storeRefreshToken(user.getId(), refreshToken);
         return buildResponse(user, token, refreshToken);
     }
 
@@ -205,6 +216,7 @@ public class AuthService {
 
         String token = jwtProvider.createToken(user.getId(), user.getEmail());
         String refreshToken = jwtProvider.createRefreshToken(user.getId());
+        storeRefreshToken(user.getId(), refreshToken);
         return buildResponse(user, token, refreshToken);
     }
 
@@ -214,11 +226,27 @@ public class AuthService {
             throw new IllegalArgumentException("유효하지 않은 리프레시 토큰입니다.");
         }
         UUID userId = jwtProvider.getUserIdFromToken(refreshToken);
+
+        String stored = (String) redisTemplate.opsForValue().get(REFRESH_KEY_PREFIX + userId);
+        if (!refreshToken.equals(stored)) {
+            throw new IllegalArgumentException("유효하지 않은 리프레시 토큰입니다.");
+        }
+
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 사용자입니다"));
         String newAccessToken = jwtProvider.createToken(user.getId(), user.getEmail());
         String newRefreshToken = jwtProvider.createRefreshToken(user.getId());
+        storeRefreshToken(userId, newRefreshToken);
         return buildResponse(user, newAccessToken, newRefreshToken);
+    }
+
+    /** 로그아웃 — Redis에서 Refresh Token 삭제 */
+    public void logout(String refreshToken) {
+        if (!jwtProvider.validateToken(refreshToken)) {
+            return; // 이미 만료된 토큰이면 그냥 무시
+        }
+        UUID userId = jwtProvider.getUserIdFromToken(refreshToken);
+        redisTemplate.delete(REFRESH_KEY_PREFIX + userId);
     }
 
     private Map<String, Object> verifyGoogleToken(String idToken) {
@@ -251,6 +279,15 @@ public class AuthService {
             if (++attempts > 10) throw new IllegalStateException("닉네임 생성에 실패했습니다.");
         }
         return nickname;
+    }
+
+    private void storeRefreshToken(UUID userId, String refreshToken) {
+        redisTemplate.opsForValue().set(
+                REFRESH_KEY_PREFIX + userId,
+                refreshToken,
+                refreshTokenTtlSeconds,
+                TimeUnit.SECONDS
+        );
     }
 
     private AuthResponse buildResponse(User user, String accessToken, String refreshToken) {
