@@ -71,8 +71,8 @@ public class UserController {
         List<Object[]> raw = visitorLogRepository.findDailyCountsSince(startDate);
 
         Map<String, Long> countMap = raw.stream().collect(Collectors.toMap(
-                r -> ((LocalDate) r[0]).format(DateTimeFormatter.ISO_LOCAL_DATE),
-                r -> (Long) r[1]
+                r -> r[0].toString(),
+                r -> ((Number) r[1]).longValue()
         ));
 
         List<Map<String, Object>> result = new ArrayList<>();
