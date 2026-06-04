@@ -13,8 +13,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.util.Map;
-import java.util.UUID;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/v1/users")
@@ -59,6 +60,27 @@ public class UserController {
                 "totalUsers", totalUsers,
                 "conversionRate", conversionRate
         ));
+    }
+
+    @GetMapping("/admin/daily-visitors")
+    public ResponseEntity<?> getDailyVisitors(
+            Authentication authentication,
+            @RequestParam(defaultValue = "30") int days) {
+        validateAdmin(authentication);
+        LocalDate startDate = LocalDate.now().minusDays(days - 1);
+        List<Object[]> raw = visitorLogRepository.findDailyCountsSince(startDate);
+
+        Map<String, Long> countMap = raw.stream().collect(Collectors.toMap(
+                r -> ((LocalDate) r[0]).format(DateTimeFormatter.ISO_LOCAL_DATE),
+                r -> (Long) r[1]
+        ));
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int i = days - 1; i >= 0; i--) {
+            String date = LocalDate.now().minusDays(i).format(DateTimeFormatter.ISO_LOCAL_DATE);
+            result.add(Map.of("date", date, "count", countMap.getOrDefault(date, 0L)));
+        }
+        return ResponseEntity.ok(result);
     }
 
     private void validateAdmin(Authentication auth) {
