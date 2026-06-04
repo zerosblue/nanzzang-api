@@ -11,10 +11,13 @@ import threading
 import subprocess
 from datetime import datetime
 
-CRAWLER_INTERVAL_HOURS = int(os.getenv("CRAWLER_INTERVAL_HOURS", "24"))
-BLOG_INTERVAL_HOURS = int(os.getenv("BLOG_INTERVAL_HOURS", "12"))
-BLOG_POST_COUNT = int(os.getenv("BLOG_POST_COUNT", "2"))
-GHOST_URL = os.getenv("GHOST_URL", "")
+CRAWLER_INTERVAL_HOURS  = int(os.getenv("CRAWLER_INTERVAL_HOURS", "24"))
+BLOG_INTERVAL_HOURS     = int(os.getenv("BLOG_INTERVAL_HOURS", "12"))
+BLOG_POST_COUNT         = int(os.getenv("BLOG_POST_COUNT", "2"))
+GHOST_URL               = os.getenv("GHOST_URL", "")
+YOUTUBE_INTERVAL_HOURS  = int(os.getenv("YOUTUBE_INTERVAL_HOURS", "24"))
+YOUTUBE_VIDEO_COUNT     = int(os.getenv("YOUTUBE_VIDEO_COUNT", "1"))
+YOUTUBE_CLIENT_SECRET_JSON = os.getenv("YOUTUBE_CLIENT_SECRET_JSON", "")
 
 
 def now() -> str:
@@ -50,15 +53,38 @@ def crawler_loop():
         run_crawler()
 
 
+def run_youtube():
+    if not YOUTUBE_CLIENT_SECRET_JSON:
+        return
+    print(f"[{now()}] 유튜브 봇 시작 ({YOUTUBE_VIDEO_COUNT}개)", flush=True)
+    result = subprocess.run(
+        ["python", "youtube_bot.py", "--count", str(YOUTUBE_VIDEO_COUNT)],
+        capture_output=False,
+    )
+    status = "완료" if result.returncode == 0 else f"실패 (exit {result.returncode})"
+    print(f"[{now()}] 유튜브 봇 {status}", flush=True)
+
+
 def blog_loop():
     if not GHOST_URL:
         print(f"[{now()}] GHOST_URL 미설정 — 블로그 봇 비활성화", flush=True)
         return
-    time.sleep(60)  # 크롤러보다 1분 늦게 시작 (NANZZANG 토픽 먼저 생성 후 링크)
+    time.sleep(60)
     run_blog()
     while True:
         time.sleep(BLOG_INTERVAL_HOURS * 3600)
         run_blog()
+
+
+def youtube_loop():
+    if not YOUTUBE_CLIENT_SECRET_JSON:
+        print(f"[{now()}] YOUTUBE_CLIENT_SECRET_JSON 미설정 — 유튜브 봇 비활성화", flush=True)
+        return
+    time.sleep(120)  # 크롤러 완료 후 2분 뒤 시작
+    run_youtube()
+    while True:
+        time.sleep(YOUTUBE_INTERVAL_HOURS * 3600)
+        run_youtube()
 
 
 if __name__ == "__main__":
@@ -68,12 +94,19 @@ if __name__ == "__main__":
         print(f"  블로그봇: {BLOG_INTERVAL_HOURS}시간 간격, {BLOG_POST_COUNT}개/회", flush=True)
     else:
         print(f"  블로그봇: 비활성화 (GHOST_URL 환경변수 필요)", flush=True)
+    if YOUTUBE_CLIENT_SECRET_JSON:
+        print(f"  유튜브봇: {YOUTUBE_INTERVAL_HOURS}시간 간격, {YOUTUBE_VIDEO_COUNT}개/회", flush=True)
+    else:
+        print(f"  유튜브봇: 비활성화 (YOUTUBE_CLIENT_SECRET_JSON 환경변수 필요)", flush=True)
 
     t_crawler = threading.Thread(target=crawler_loop, daemon=True)
-    t_blog = threading.Thread(target=blog_loop, daemon=True)
+    t_blog    = threading.Thread(target=blog_loop, daemon=True)
+    t_youtube = threading.Thread(target=youtube_loop, daemon=True)
 
     t_crawler.start()
     t_blog.start()
+    t_youtube.start()
 
     t_crawler.join()
     t_blog.join()
+    t_youtube.join()
