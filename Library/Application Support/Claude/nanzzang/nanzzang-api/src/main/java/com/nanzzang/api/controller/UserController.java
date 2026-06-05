@@ -68,7 +68,7 @@ public class UserController {
             @RequestParam(defaultValue = "30") int days) {
         validateAdmin(authentication);
         LocalDate startDate = LocalDate.now().minusDays(days - 1);
-        List<Object[]> raw = visitorLogRepository.findDailyCountsSince(startDate);
+        List<Object[]> raw = visitorLogRepository.findDailyCountsSince(startDate.format(DateTimeFormatter.ISO_LOCAL_DATE));
 
         Map<String, Long> countMap = raw.stream().collect(Collectors.toMap(
                 r -> r[0].toString(),

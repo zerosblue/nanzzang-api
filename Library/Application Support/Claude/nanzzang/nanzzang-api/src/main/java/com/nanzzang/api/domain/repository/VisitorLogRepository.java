@@ -12,6 +12,6 @@ public interface VisitorLogRepository extends JpaRepository<VisitorLog, Long> {
     boolean existsByIpAddressAndVisitDate(String ipAddress, LocalDate visitDate);
     long countByVisitDate(LocalDate visitDate);
 
-    @Query(value = "SELECT visit_date, COUNT(*) FROM visitor_logs WHERE visit_date >= :startDate GROUP BY visit_date ORDER BY visit_date", nativeQuery = true)
-    List<Object[]> findDailyCountsSince(@Param("startDate") LocalDate startDate);
+    @Query(value = "SELECT TO_CHAR(visit_date, 'YYYY-MM-DD'), COUNT(*) FROM visitor_logs WHERE visit_date >= CAST(:startDate AS DATE) GROUP BY visit_date ORDER BY visit_date", nativeQuery = true)
+    List<Object[]> findDailyCountsSince(@Param("startDate") String startDate);
 }

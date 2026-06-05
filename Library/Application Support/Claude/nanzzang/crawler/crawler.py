@@ -13,6 +13,7 @@ NANZZANG 크롤러 봇
 import os
 import json
 import time
+import random
 import argparse
 import requests
 import xml.etree.ElementTree as ET
@@ -66,6 +67,17 @@ CATEGORY_MAP = {
     "연애": "love",
     "직장": "work",
 }
+
+TITLE_PATTERNS = [
+    "~가 옳냐 vs ~가 옳냐",
+    "~편이냐 vs ~편이냐",
+    "~가 정상이냐 vs 비정상이냐",
+    "~해야 하냐 vs 말아야 하냐",
+    "이해돼? vs 말도 안 돼",
+    "~가 문제냐 vs 쟤가 문제냐",
+    "니편은? A vs B",
+    "~한 거 당연하냐 vs 어이없냐",
+]
 
 CATEGORY_HASHTAGS = {
     "politics": ["#정치갈등", "#여야대결", "#정치이슈"],
@@ -121,24 +133,67 @@ def fetch_naver_ranking_headlines() -> list[str]:
 
 
 def fetch_naver_rss_headlines() -> list[str]:
-    """네이버 뉴스 RSS 헤드라인 수집 (폴백)"""
+    """뉴스 RSS 헤드라인 수집 (폴백)"""
     rss_sources = [
-        "https://news.naver.com/main/rss/index.naver?oid=001",  # 연합뉴스
-        "https://news.naver.com/main/rss/index.naver?oid=028",  # 한겨레
-        "https://news.naver.com/main/rss/index.naver?oid=023",  # 조선일보
+        ("https://www.yonhapnewstv.co.kr/browse/feed/", "연합뉴스TV"),
+        ("https://www.hankyung.com/feed/all-news", "한국경제"),
     ]
     headlines = []
-    for url in rss_sources:
+    for url, name in rss_sources:
         try:
             resp = requests.get(url, headers=HEADERS, timeout=8)
-            root = ET.fromstring(resp.content)
+            root = _parse_rss_safely(resp.content)
+            if root is None:
+                continue
             for item in root.findall(".//item")[:5]:
                 title = item.findtext("title", "").strip()
-                if title:
+                if title and len(title) > 5:
                     headlines.append(title)
         except Exception as e:
-            print(f"[RSS 실패] {url}: {e}")
-    print(f"[RSS] {len(headlines)}개 헤드라인 수집")
+            print(f"[RSS 실패] {name}: {e}")
+    print(f"[RSS 폴백] {len(headlines)}개 헤드라인 수집")
+    return headlines
+
+
+def _parse_rss_safely(content: bytes) -> ET.Element | None:
+    """RSS XML 파싱 — 특수문자/인코딩 오류 허용"""
+    import re
+    try:
+        return ET.fromstring(content)
+    except ET.ParseError:
+        pass
+    try:
+        # 잘못된 XML 문자 제거 후 재시도
+        text = content.decode("utf-8", errors="replace")
+        text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+        return ET.fromstring(text.encode("utf-8"))
+    except Exception:
+        return None
+
+
+def fetch_political_headlines() -> list[str]:
+    """정치 뉴스 전문 소스 크롤링 — 보수/진보 매체 균형 수집"""
+    sources = [
+        ("https://www.chosun.com/arc/outboundfeeds/rss/category/politics/?outputType=xml", "조선일보"),  # 보수
+        ("https://www.khan.co.kr/rss/rssdata/politic_news.xml", "경향신문"),    # 진보
+        ("https://www.hani.co.kr/rss/politics/", "한겨레"),                     # 진보
+        ("https://rss.ohmynews.com/rss/politics.xml", "오마이뉴스"),            # 진보
+    ]
+    headlines = []
+    for url, name in sources:
+        try:
+            resp = requests.get(url, headers=HEADERS, timeout=8)
+            root = _parse_rss_safely(resp.content)
+            if root is None:
+                print(f"[정치뉴스 파싱실패] {name}")
+                continue
+            for item in root.findall(".//item")[:4]:
+                title = item.findtext("title", "").strip()
+                if title and len(title) > 5:
+                    headlines.append(f"[{name}] {title}")
+        except Exception as e:
+            print(f"[정치뉴스 실패] {name}: {e}")
+    print(f"[정치뉴스] {len(headlines)}개 헤드라인 수집")
     return headlines
 
 
@@ -165,13 +220,23 @@ def fetch_daum_headlines() -> list[str]:
 
 
 def collect_headlines() -> list[str]:
-    """여러 소스에서 헤드라인 수집 후 합산"""
+    """여러 소스에서 헤드라인 수집 — 정치 매체 우선 포함"""
     headlines = []
+
+    # 1. 정치 전문 소스 (보수/진보 균형) — 항상 수집
+    political = fetch_political_headlines()
+    headlines += political
+
+    # 2. 네이버 랭킹 (일반 인기 뉴스)
     headlines += fetch_naver_ranking_headlines()
+
+    # 3. 다음 (보충)
+    if len(headlines) < 10:
+        headlines += fetch_daum_headlines()
+
+    # 4. 폴백
     if len(headlines) < 5:
         headlines += fetch_naver_rss_headlines()
-    if len(headlines) < 5:
-        headlines += fetch_daum_headlines()
 
     # 중복 제거
     seen = set()
@@ -182,7 +247,7 @@ def collect_headlines() -> list[str]:
             seen.add(key)
             unique.append(h)
 
-    return unique[:20]
+    return unique[:30]
 
 
 # ─── AI 토픽 생성 ─────────────────────────────────────────────────────────────
@@ -222,14 +287,48 @@ def pick_target_categories(recent_topics: list[dict], count: int, election_mode:
             targets.append(others[i % len(others)])
         return targets
 
-    # 정치 40% 고정 (5개 기준 2개)
-    politics_slots = max(1, round(count * 0.4))
+    # 정치 40~50% (5개 기준 2개, 10개 기준 5개)
+    politics_slots = max(2, int(count * 0.45 + 0.5))
     other_slots = count - politics_slots
     others = sorted([c for c in ALL_CATEGORIES if c != "politics"], key=lambda c: cat_count.get(c, 0))
-    targets = ["politics"] * politics_slots
-    for i in range(other_slots):
-        targets.append(others[i % len(others)])
-    return targets
+
+    # 연속 같은 카테고리 방지: politics를 분산 배치
+    others_assigned = [others[i % len(others)] for i in range(other_slots)]
+    # politics와 others를 번갈아 배치
+    targets = []
+    pi, oi = 0, 0
+    while pi < politics_slots or oi < other_slots:
+        if pi < politics_slots:
+            targets.append("politics")
+            pi += 1
+        if oi < other_slots:
+            targets.append(others_assigned[oi])
+            oi += 1
+    return targets[:count]
+
+
+def _pick_pattern_order(count: int) -> list[int]:
+    """패턴 인덱스 배정 — 연속 중복 없이, 골고루 회전"""
+    n = len(TITLE_PATTERNS)
+    base = list(range(n))
+    random.shuffle(base)
+    full = []
+    while len(full) < count:
+        chunk = base[:]
+        random.shuffle(chunk)
+        # 이전 끝 패턴과 다음 시작 패턴 충돌 방지
+        if full and chunk[0] == full[-1]:
+            if len(chunk) > 1:
+                chunk[0], chunk[1] = chunk[1], chunk[0]
+        full.extend(chunk)
+    result = full[:count]
+    # 혹시 남은 연속 중복 제거
+    for i in range(1, len(result)):
+        if result[i] == result[i - 1]:
+            swap_with = next((j for j in range(i + 1, len(result)) if result[j] != result[i - 1]), None)
+            if swap_with:
+                result[i], result[swap_with] = result[swap_with], result[i]
+    return result
 
 
 def generate_topics_with_ai(
@@ -239,12 +338,13 @@ def generate_topics_with_ai(
     """Claude AI로 NANZZANG 스타일 대결 토픽 생성"""
     client = Anthropic()
 
-    headlines_text = "\n".join(f"- {h}" for h in headlines[:15])
+    headlines_text = "\n".join(f"- {h}" for h in headlines[:20])
     today = datetime.now().strftime("%Y년 %m월 %d일")
 
     # 최근 토픽 컨텍스트 구성
     recent_topics = recent_topics or []
     target_categories = pick_target_categories(recent_topics, count, election_mode=election_mode)
+    pattern_order = _pick_pattern_order(count)
 
     recent_titles_text = ""
     if recent_topics:
@@ -254,9 +354,9 @@ def generate_topics_with_ai(
 {chr(10).join(f"- {t}" for t in titles)}
 """
 
-    # 각 토픽에 카테고리 지정
+    # 각 토픽에 카테고리 + 제목 패턴 지정
     category_assignments = "\n".join(
-        f"- 토픽 {i+1}번: 반드시 카테고리 = \"{cat}\""
+        f"- 토픽 {i+1}번: 카테고리 = \"{cat}\", 제목패턴 = \"{TITLE_PATTERNS[pattern_order[i]]}\""
         for i, cat in enumerate(target_categories)
     )
 
@@ -270,7 +370,7 @@ def generate_topics_with_ai(
 - A팀/B팀 이름은 실제 갈등 진영을 반영해라 (예: "심판해야" vs "지켜야", "정권교체" vs "정권유지")
 """
 
-    prompt = f"""오늘은 {today}이다. 아래는 오늘 네이버/다음 뉴스 헤드라인이다.
+    prompt = f"""오늘은 {today}이다. 아래는 오늘 조선일보/한겨레/경향신문/오마이뉴스/중앙일보/네이버 랭킹 뉴스 헤드라인이다.
 
 {headlines_text}
 {recent_titles_text}{election_guide}
@@ -281,14 +381,29 @@ NANZZANG의 정체성:
 - 중립은 죽음이다. 반드시 A팀 아니면 B팀이다
 - 읽는 순간 "씨X 저거 맞지" 또는 "저건 진짜 아니지" 반응이 터져야 한다
 - 온라인 커뮤니티에서 캡처해서 퍼날라야 할 만큼 자극적이어야 한다
+- A팀과 B팀은 완전히 반대 극단에 위치해야 한다 — 중간 입장 없음
+
+[제목 패턴 사용 규칙 — 반드시 엄수]
+각 토픽마다 지정된 패턴을 정확히 적용해라. "~" 부분에 해당 내용을 채워서 완성해라.
+
+패턴 예시:
+- "~가 옳냐 vs ~가 옳냐" → "민주당 옹호가 옳냐 vs 국힘 옹호가 옳냐"
+- "~편이냐 vs ~편이냐" → "검찰편이냐 vs 야당편이냐"
+- "~가 정상이냐 vs 비정상이냐" → "탄핵 집착이 정상이냐 vs 비정상이냐"
+- "~해야 하냐 vs 말아야 하냐" → "지지 철회해야 하냐 vs 말아야 하냐"
+- "이해돼? vs 말도 안 돼" → "이재명 무죄 이해돼? vs 말도 안 돼"
+- "~가 문제냐 vs 쟤가 문제냐" → "여당이 문제냐 vs 쟤가 문제냐"
+- "니편은? A vs B" → "니편은? 탄핵파 vs 사수파"
+- "~한 거 당연하냐 vs 어이없냐" → "이탈표 던진 거 당연하냐 vs 어이없냐"
 
 [정치 토픽 특별 지침 — politics 카테고리 필수 적용]
-핵심 원칙: 보수와 진보가 각자 "저 새끼들 진짜 X같네" 하며 달려드는 구도를 만들어라.
+핵심 원칙: 조선일보 독자(보수)와 한겨레/오마이뉴스 독자(진보)가 각자 "저 새끼들 진짜 X같네" 하며 달려드는 구도를 만들어라.
 한쪽이 일방적으로 욕먹는 구도 X → 양쪽 다 격하게 싸울 수 있는 구도 O
 
 활용할 갈등 소재 (뉴스와 연결해서 사용):
 - 탄핵/반탄핵 진영 충돌 — 서로가 서로를 매국노·내로남불로 보는 구도
 - 정권 심판 vs 야당 심판 — "이 정권이 더 X" vs "야당이 집권하면 더 X"
+- 여당 발언 vs 야당 발언 — 정치인 실언/망언 진영별 해석 충돌
 - 586운동권 vs MZ보수 — 세대+이념 복합 갈등
 - 친미 vs 친중 외교 노선 충돌
 - 검찰개혁 찬반 — "검찰공화국" vs "방탄방패"
@@ -296,43 +411,45 @@ NANZZANG의 정체성:
 - 노조·파업 갈등 — "귀족노조" vs "노동탄압"
 - 부동산 정책 — "집값 올린 건 민주당" vs "집값 올린 건 국힘"
 
-A/B팀 이름 예시 (이 수준의 날카로움):
+A/B팀 이름 예시 (이 수준의 날카로움 필수):
 - "탄핵당연" vs "탄핵역적"
 - "정권심판" vs "야당심판"
 - "검찰해체" vs "방탄해체"
 - "운동권OUT" vs "MZ꼴통"
 - "조중동폐간" vs "한겨레폐간"
+- "이재명무죄" vs "이재명유죄"
+- "국힘해산해" vs "민주당해산"
 
 정치인 실명·정당명 직접 언급 가능, 단 허위사실 적시 금지.
-양쪽 모두 격하게 공감하고 싸울 수 있어야 한다 — 한쪽 편들기 X, 전쟁터 만들기 O
 
 제목 작성 규칙:
-1. 제목 첫 글자부터 도발 — 읽자마자 욕 나오거나 격하게 공감해야 함
-2. "~하는 거 진짜 아니지 않냐?", "~은 솔직히 X같지 않냐?", "~이 맞냐 틀리냐" 직격탄 문체
-3. 뉴스를 한국인의 실제 분노 포인트로 재해석해라 (계층갈등, 세대갈등, 정치혐오 등)
+1. 지정된 패턴을 반드시 사용 — 패턴 없는 제목 절대 금지
+2. 읽자마자 욕 나오거나 격하게 공감해야 함
+3. 뉴스를 한국인의 실제 분노 포인트로 재해석 (계층갈등, 세대갈등, 정치혐오 등)
 4. 제목만 봐도 댓글 1000개 달릴 것 같아야 함
-5. 혐오·차별(인종, 성별 비하 등)은 절대 금지, 하지만 갈등·분노·논쟁은 최대한 날카롭게
+5. 혐오·차별(인종, 성별 비하 등)은 절대 금지, 갈등·분노·논쟁은 최대한 날카롭게
 6. 최근 등록된 토픽과 주제·소재가 겹치면 절대 안 됨
 
 body 작성 규칙:
 - 독자의 분노 또는 공감을 즉시 폭발시켜야 한다
-- "이 상황을 모르면 간첩" 수준으로 핵심 쟁점을 날카롭게 정리
-- 마지막 문장은 반드시 편 가르기 유도 ("너는 어느 편이냐", "진짜 X같지 않냐" 식으로)
+- 핵심 쟁점을 날카롭게 정리하되, 양쪽 진영 모두 격하게 반응할 수 있도록
+- 마지막 문장은 반드시 극단적 편 가르기 유도 ("넌 어느 편이냐", "X같지 않냐" 식으로)
+- 감정 자극 단어 적극 활용: 배신, 내로남불, 적폐, 빨갱이, 꼴통, 위선, 기만 등
 
 A팀/B팀 이름 규칙:
 - 읽는 순간 즉각 한 팀에 감정이입이 되어야 한다
-- 예시: "당연히탄핵" vs "탄핵반대", "민주당OUT" vs "국힘이더문제", "586청산" vs "586이맞다"
 - 짧고 강렬하게, 최대 8자 이내
-- "찬성" "반대" "지지" "반대" 같은 무색무취 표현 절대 금지
+- "찬성" "반대" "지지" 같은 무색무취 표현 절대 금지
+- 두 팀은 완전히 반대 극단 — 중간 입장 없음
 
-카테고리 배분 — 반드시 아래 지시를 따를 것:
+카테고리 배분 + 제목 패턴 — 반드시 아래 지시를 정확히 따를 것:
 {category_assignments}
 
 아래 JSON 형식으로만 반환해라. 절대 다른 텍스트 없이 JSON만:
 [
   {{
-    "title": "폭발적 대결 주제 제목 (최대 50자, 마침표 없이)",
-    "body": "분노와 공감을 즉시 폭발시키는 배경 설명 2-3문장. 마지막은 편 가르기 유도.",
+    "title": "지정된 패턴을 적용한 폭발적 대결 제목 (최대 50자, 마침표 없이)",
+    "body": "분노와 공감을 즉시 폭발시키는 배경 설명 2-3문장. 마지막은 극단적 편 가르기 유도.",
     "category": "카테고리",
     "teamAName": "극단적 A진영 이름 (최대 8자)",
     "teamBName": "극단적 B진영 이름 (최대 8자)",
