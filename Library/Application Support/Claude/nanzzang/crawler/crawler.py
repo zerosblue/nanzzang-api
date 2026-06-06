@@ -255,7 +255,7 @@ def collect_headlines() -> list[str]:
 ALL_CATEGORIES = ["politics", "economy", "social", "culture", "daily", "love", "work", "story"]
 
 
-def fetch_recent_topics(token: str, size: int = 20) -> list[dict]:
+def fetch_recent_topics(token: str, size: int = 50) -> list[dict]:
     """최근 토픽 목록 조회 (중복 방지용)"""
     try:
         resp = requests.get(
@@ -979,21 +979,43 @@ def run(count: int = 5, dry_run: bool = False, election_mode: bool = False):
         print(json.dumps(topics, ensure_ascii=False, indent=2))
         return
 
-    # 4. API 등록
+    # 4. API 등록 (하드 중복 필터 적용)
     print(f"\n[4단계] NANZZANG API 등록 중 ({API_URL})...")
+    recent_titles = [t.get("title", "") for t in recent_topics]
+
+    def _is_too_similar(new_title: str, existing: list[str]) -> bool:
+        """기존 제목과 6자 이상 겹치는 키워드가 있으면 중복으로 판단"""
+        new_words = set(new_title.replace(" ", ""))
+        for old in existing:
+            old_words = set(old.replace(" ", ""))
+            overlap = len(new_words & old_words)
+            if overlap >= 8:
+                return True
+        return False
+
     success = 0
     for topic in topics:
+        title = topic.get("title", "?")
+        if _is_too_similar(title, recent_titles):
+            print(f"  ⚠ 유사 토픽 건너뜀: {title}")
+            continue
         try:
             result = post_topic(topic, token)
+            recent_titles.append(title)  # 이번 배치 내 중복도 방지
             success += 1
             post_to_meta(result)
             post_to_twitter(result)
             run_debate_bots(result)
             time.sleep(0.5)
         except Exception as e:
-            print(f"  ✗ 등록 실패: {topic.get('title', '?')} — {e}")
+            print(f"  ✗ 등록 실패: {title} — {e}")
 
     print(f"\n✅ 완료: {success}/{len(topics)}개 토픽 등록됨")
+
+    # 5. 등록 후 기존 유사 토픽 AI 정리
+    print("\n[5단계] 유사/중복 토픽 AI 정리 중...")
+    clean_similar_topics(token)
+
     print("=" * 60)
 
 
