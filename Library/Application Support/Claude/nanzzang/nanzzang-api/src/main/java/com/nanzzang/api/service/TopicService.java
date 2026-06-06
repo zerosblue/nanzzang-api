@@ -52,6 +52,12 @@ public class TopicService {
         return topics.map(this::toResponse);
     }
 
+    public Page<TopicResponse> searchTopics(String keyword, int page, int size) {
+        Pageable pageable = PageRequest.of(page, size);
+        return topicRepository.findByTitleContainingIgnoreCaseOrderByCreatedAtDesc(keyword.trim(), pageable)
+                .map(this::toResponse);
+    }
+
     public TopicResponse getTopicDetail(UUID id) {
         Topic topic = topicRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 토픽입니다: " + id));

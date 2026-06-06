@@ -22,6 +22,8 @@ public interface TopicRepository extends JpaRepository<Topic, UUID> {
            "t.hotScore DESC")
     Page<Topic> findAllOrderByActiveFirstThenHotScore(@Param("now") LocalDateTime now, Pageable pageable);
 
+    Page<Topic> findByTitleContainingIgnoreCaseOrderByCreatedAtDesc(String keyword, Pageable pageable);
+
     @Modifying
     @Query("UPDATE Topic t SET t.viewCount = t.viewCount + :delta WHERE t.id = :id")
     void incrementViewCount(@Param("id") UUID id, @Param("delta") long delta);
