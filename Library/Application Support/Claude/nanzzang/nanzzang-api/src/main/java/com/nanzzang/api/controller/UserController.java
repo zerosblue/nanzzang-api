@@ -1,6 +1,10 @@
 package com.nanzzang.api.controller;
 
+import com.nanzzang.api.domain.Topic;
 import com.nanzzang.api.domain.User;
+import com.nanzzang.api.domain.Comment;
+import com.nanzzang.api.domain.repository.CommentRepository;
+import com.nanzzang.api.domain.repository.TopicRepository;
 import com.nanzzang.api.domain.repository.UserRepository;
 import com.nanzzang.api.domain.repository.VisitorLogRepository;
 import com.nanzzang.api.dto.AdminUserResponse;
@@ -11,6 +15,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -25,6 +31,8 @@ public class UserController {
     private final UserService userService;
     private final UserRepository userRepository;
     private final VisitorLogRepository visitorLogRepository;
+    private final TopicRepository topicRepository;
+    private final CommentRepository commentRepository;
 
     @GetMapping("/me")
     public ResponseEntity<UserResponse> getMyStats(Authentication authentication) {
@@ -81,6 +89,40 @@ public class UserController {
             result.add(Map.of("date", date, "count", countMap.getOrDefault(date, 0L)));
         }
         return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/admin/{userId}/activity")
+    @Transactional(readOnly = true)
+    public ResponseEntity<?> getUserActivity(
+            Authentication authentication,
+            @PathVariable UUID userId) {
+        validateAdmin(authentication);
+
+        List<Topic> topics = topicRepository.findByAuthorIdOrderByCreatedAtDesc(userId);
+        List<Comment> comments = commentRepository.findByUserIdOrderByCreatedAtDesc(userId);
+
+        List<Map<String, Object>> topicList = topics.stream().map(t -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", t.getId());
+            m.put("title", t.getTitle());
+            m.put("category", t.getCategory());
+            m.put("viewCount", t.getViewCount());
+            m.put("createdAt", t.getCreatedAt());
+            return m;
+        }).collect(Collectors.toList());
+
+        List<Map<String, Object>> commentList = comments.stream().map(c -> {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id", c.getId());
+            m.put("content", c.getContent());
+            m.put("teamSide", c.getTeamSide());
+            m.put("topicId", c.getTopic().getId());
+            m.put("topicTitle", c.getTopic().getTitle());
+            m.put("createdAt", c.getCreatedAt());
+            return m;
+        }).collect(Collectors.toList());
+
+        return ResponseEntity.ok(Map.of("topics", topicList, "comments", commentList));
     }
 
     private void validateAdmin(Authentication auth) {

@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
@@ -39,6 +40,9 @@ public class User extends BaseEntity {
     @Column(nullable = false, columnDefinition = "int default 0")
     private int winCount = 0;
 
+    @Column(name = "last_visited_at")
+    private LocalDateTime lastVisitedAt;
+
     @Builder
     public User(String email, String nickname, String passwordHash, String provider, boolean isPro, String role) {
         this.email = email;
@@ -67,6 +71,10 @@ public class User extends BaseEntity {
 
     public void incrementWinCount() {
         this.winCount++;
+    }
+
+    public void touchLastVisited() {
+        this.lastVisitedAt = LocalDateTime.now();
     }
 
     public Grade getGrade() {

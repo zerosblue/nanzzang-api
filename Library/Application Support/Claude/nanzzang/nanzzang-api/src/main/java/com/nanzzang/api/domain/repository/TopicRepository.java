@@ -24,6 +24,8 @@ public interface TopicRepository extends JpaRepository<Topic, UUID> {
 
     Page<Topic> findByTitleContainingIgnoreCaseOrderByCreatedAtDesc(String keyword, Pageable pageable);
 
+    List<Topic> findByAuthorIdOrderByCreatedAtDesc(UUID authorId);
+
     @Modifying
     @Query("UPDATE Topic t SET t.viewCount = t.viewCount + :delta WHERE t.id = :id")
     void incrementViewCount(@Param("id") UUID id, @Param("delta") long delta);
