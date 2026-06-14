@@ -544,7 +544,7 @@ def clean_similar_topics(_token: str = None):
 
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=500,
+        max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
 
@@ -984,13 +984,14 @@ def run(count: int = 5, dry_run: bool = False, election_mode: bool = False):
     recent_titles = [t.get("title", "") for t in recent_topics]
 
     def _is_too_similar(new_title: str, existing: list[str]) -> bool:
-        """기존 제목과 6자 이상 겹치는 키워드가 있으면 중복으로 판단"""
-        new_words = set(new_title.replace(" ", ""))
+        """기존 제목에 6자 이상 연속 문자열이 그대로 포함되면 중복으로 판단"""
+        new_clean = new_title.replace(" ", "")
+        min_len = 6
         for old in existing:
-            old_words = set(old.replace(" ", ""))
-            overlap = len(new_words & old_words)
-            if overlap >= 8:
-                return True
+            old_clean = old.replace(" ", "")
+            for i in range(len(new_clean) - min_len + 1):
+                if new_clean[i:i + min_len] in old_clean:
+                    return True
         return False
 
     success = 0
