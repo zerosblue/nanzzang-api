@@ -3,6 +3,7 @@ package com.nanzzang.api.controller;
 import com.nanzzang.api.domain.Topic;
 import com.nanzzang.api.domain.User;
 import com.nanzzang.api.domain.Comment;
+import com.nanzzang.api.domain.VisitorLog;
 import com.nanzzang.api.domain.repository.CommentRepository;
 import com.nanzzang.api.domain.repository.TopicRepository;
 import com.nanzzang.api.domain.repository.UserRepository;
@@ -76,27 +77,19 @@ public class UserController {
             @RequestParam(defaultValue = "30") int days) {
         validateAdmin(authentication);
         LocalDate startDate = LocalDate.now().minusDays(days - 1);
-        try {
-            List<Object[]> raw = visitorLogRepository.findDailyCountsSince(startDate);
+        Map<String, Long> countMap = visitorLogRepository.findByVisitDateGreaterThanEqual(startDate)
+                .stream()
+                .collect(Collectors.groupingBy(
+                        log -> log.getVisitDate().format(DateTimeFormatter.ISO_LOCAL_DATE),
+                        Collectors.counting()
+                ));
 
-            Map<String, Long> countMap = raw.stream().collect(Collectors.toMap(
-                    r -> r[0].toString(),
-                    r -> ((Number) r[1]).longValue()
-            ));
-
-            List<Map<String, Object>> result = new ArrayList<>();
-            for (int i = days - 1; i >= 0; i--) {
-                String date = LocalDate.now().minusDays(i).format(DateTimeFormatter.ISO_LOCAL_DATE);
-                result.add(Map.of("date", date, "count", countMap.getOrDefault(date, 0L)));
-            }
-            return ResponseEntity.ok(result);
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of(
-                    "error", e.getClass().getSimpleName(),
-                    "message", e.getMessage() != null ? e.getMessage() : "",
-                    "cause", e.getCause() != null ? e.getCause().getMessage() : ""
-            ));
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int i = days - 1; i >= 0; i--) {
+            String date = LocalDate.now().minusDays(i).format(DateTimeFormatter.ISO_LOCAL_DATE);
+            result.add(Map.of("date", date, "count", countMap.getOrDefault(date, 0L)));
         }
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/admin/{userId}/activity")
