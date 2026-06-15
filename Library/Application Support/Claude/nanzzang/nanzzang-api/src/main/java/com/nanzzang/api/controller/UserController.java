@@ -77,19 +77,27 @@ public class UserController {
             @RequestParam(defaultValue = "30") int days) {
         validateAdmin(authentication);
         LocalDate startDate = LocalDate.now().minusDays(days - 1);
-        Map<String, Long> countMap = visitorLogRepository.findByVisitDateGreaterThanEqual(startDate)
-                .stream()
-                .collect(Collectors.groupingBy(
-                        log -> log.getVisitDate().format(DateTimeFormatter.ISO_LOCAL_DATE),
-                        Collectors.counting()
-                ));
+        try {
+            Map<String, Long> countMap = visitorLogRepository.findByVisitDateGreaterThanEqual(startDate)
+                    .stream()
+                    .collect(Collectors.groupingBy(
+                            log -> log.getVisitDate().format(DateTimeFormatter.ISO_LOCAL_DATE),
+                            Collectors.counting()
+                    ));
 
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (int i = days - 1; i >= 0; i--) {
-            String date = LocalDate.now().minusDays(i).format(DateTimeFormatter.ISO_LOCAL_DATE);
-            result.add(Map.of("date", date, "count", countMap.getOrDefault(date, 0L)));
+            List<Map<String, Object>> result = new ArrayList<>();
+            for (int i = days - 1; i >= 0; i--) {
+                String date = LocalDate.now().minusDays(i).format(DateTimeFormatter.ISO_LOCAL_DATE);
+                result.add(Map.of("date", date, "count", countMap.getOrDefault(date, 0L)));
+            }
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of(
+                    "error", e.getClass().getName(),
+                    "message", e.getMessage() != null ? e.getMessage() : "",
+                    "cause", e.getCause() != null ? e.getCause().toString() : ""
+            ));
         }
-        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/admin/{userId}/activity")

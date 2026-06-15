@@ -11,6 +11,8 @@ spring:
       initialization-fail-timeout: -1
       connection-timeout: 30000
       validation-timeout: 5000
+      data-source-properties:
+        prepareThreshold: 0
 
   jpa:
     hibernate:
